@@ -1,4 +1,4 @@
-"""Master Node - Dashboard Pro (Version 100% Réelle & Synchronisée)."""
+"""Master Node - Dashboard Pro (Version 100% Réelle & Options Intégrales)."""
 import asyncio
 import os
 import uuid
@@ -12,7 +12,6 @@ WORKER_URLS = os.getenv(
 ).split(",")
 
 session = None
-# État global des bots centralisé sur le Master
 cluster_bot_states = {}
 
 def detect_platform_and_channel(url: str):
@@ -65,6 +64,14 @@ async def index(request):
         .checkbox-group input { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; }
         .checkbox-group label { margin-bottom: 0; color: var(--text); cursor: pointer; font-size: 13px; flex-grow: 1; }
 
+        .reconnect-options-container { display: none; align-items: center; gap: 8px; margin-bottom: 15px; background: rgba(15, 23, 42, 0.6); padding: 8px 12px; border-radius: 6px; border: 1px dashed #334155; }
+        .reconnect-options-container.active { display: flex; }
+        .reconnect-options-container label { font-size: 12px; color: var(--muted); margin-bottom: 0; }
+        .reconnect-options-container select { width: auto; padding: 5px 10px; font-size: 12px; }
+
+        .conditional-group { background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: 8px; border: 1px dashed #334155; margin-bottom: 15px; display: none; }
+        .conditional-group.active { display: block; }
+
         .detected-info { font-size: 12px; color: var(--accent); margin-top: 4px; font-weight: bold; }
         
         .btn-group { display: flex; gap: 10px; margin-top: 20px; }
@@ -75,7 +82,6 @@ async def index(request):
         .btn-stop { background: var(--danger); color: white; }
         .btn-stop:hover { background: #dc2626; }
 
-        /* Grille mise à jour : 4 éléments demandés (Actifs, En lancement, Bannis, Est. Live) */
         .stats-dashboard { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 15px; }
         .stat-box { background: var(--card-alt); border: 1px solid #334155; border-radius: 8px; padding: 8px; text-align: center; }
         .stat-box .stat-val { font-size: 15px; font-weight: bold; color: var(--accent); }
@@ -128,16 +134,51 @@ async def index(request):
 
             <div class="form-group">
                 <label>Mode de Fonctionnement Principal</label>
-                <select id="operation_mode">
+                <select id="operation_mode" onchange="updateInterfaceLogic()">
                     <option value="views_live" selected>👁️ Ajouter des vues (Live)</option>
                     <option value="chat_live">⚡ Ajouter des vues + Messages (Live)</option>
                     <option value="views_video">📈 Ajouter des vues (Vidéo / Short)</option>
                 </select>
             </div>
 
+            <div class="conditional-group" id="chat-settings-group">
+                <div class="form-group">
+                    <label>Message Chat à envoyer</label>
+                    <input type="text" id="chat_message" value="Raid Bot by {Anonymous}">
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label>Intervalle des messages (secondes)</label>
+                    <input type="number" id="chat_interval" value="10" min="1">
+                </div>
+            </div>
+
+            <div class="checkbox-group">
+                <input type="checkbox" id="auto_waves_toggle" checked>
+                <label for="auto_waves_toggle">🚀 Lancer automatiquement par vagues sécurisées</label>
+            </div>
+
+            <div class="checkbox-group">
+                <input type="checkbox" id="auto_reconnect_banned" checked>
+                <label for="auto_reconnect_banned">🔄 Relancer automatiquement les bots bannis / filtrés</label>
+            </div>
+
+            <div class="checkbox-group" style="border-color: rgba(239, 68, 68, 0.3); background: rgba(239, 68, 68, 0.05);">
+                <input type="checkbox" id="auto_remove_banned">
+                <label for="auto_remove_banned">🗑️ Supprimer automatiquement les bots bannis / filtrés</label>
+            </div>
+
+            <div class="reconnect-options-container active" id="reconnect-options-box">
+                <label for="reconnect_attempts">Nombre d'essais :</label>
+                <select id="reconnect_attempts">
+                    <option value="1">1 fois</option>
+                    <option value="5">5 fois</option>
+                    <option value="infinite" selected>Infini</option>
+                </select>
+            </div>
+
             <div class="form-group">
-                <label>Nombre de bots</label>
-                <input type="number" id="users" value="10" min="1" max="1000">
+                <label>Nombre de bots (Max : 10000)</label>
+                <input type="number" id="users" value="10" min="1" max="10000">
             </div>
 
             <div class="btn-group">
@@ -152,7 +193,6 @@ async def index(request):
         <div class="monitor-panel">
             <h2>Monitoring Avancé <span class="badge" id="active-bots-count">0 Total</span></h2>
             
-            <!-- Dashboard des stats épuré selon tes consignes (sans le bloc "en cours") -->
             <div class="stats-dashboard">
                 <div class="stat-box">
                     <div class="stat-val" id="stat-active">0</div>
@@ -183,15 +223,64 @@ async def index(request):
     <script>
         let pollInterval = null;
 
+        document.addEventListener("DOMContentLoaded", () => {
+            const autoRestartCheckbox = document.getElementById('auto_reconnect_banned');
+            const autoRemoveCheckbox = document.getElementById('auto_remove_banned');
+
+            if (autoRestartCheckbox && autoRemoveCheckbox) {
+                autoRestartCheckbox.addEventListener('change', function() {
+                    if (this.checked) autoRemoveCheckbox.checked = false;
+                    toggleReconnectOptions();
+                });
+                autoRemoveCheckbox.addEventListener('change', function() {
+                    if (this.checked) autoRestartCheckbox.checked = false;
+                    toggleReconnectOptions();
+                });
+            }
+            toggleReconnectOptions();
+            updateInterfaceLogic();
+        });
+
+        function toggleReconnectOptions() {
+            const checkbox = document.getElementById('auto_reconnect_banned');
+            const optionsBox = document.getElementById('reconnect-options-box');
+            if (checkbox && checkbox.checked) {
+                optionsBox.classList.add('active');
+            } else {
+                optionsBox.classList.remove('active');
+            }
+        }
+
         function log(msg) {
             const j = document.getElementById('journal');
-            // Journal simplifié : affichage direct de messages courts et propres
             j.innerHTML += "[" + new Date().toLocaleTimeString() + "] " + msg + "<br>";
             j.scrollTop = j.scrollHeight;
         }
 
         function updateInterfaceLogic() {
-            // Logique de détection d'URL
+            const urlInput = document.getElementById('target_url').value.trim();
+            const badge = document.getElementById('platform-badge');
+            const info = document.getElementById('auto-detect-text');
+            const modeSelect = document.getElementById('operation_mode').value;
+            const chatGroup = document.getElementById('chat-settings-group');
+            
+            try {
+                const parsed = new URL(urlInput);
+                const domain = parsed.hostname.toLowerCase();
+                if (domain.includes('twitch.tv')) { badge.innerText = 'Twitch'; info.innerText = 'Plateforme détectée : Twitch'; }
+                else if (domain.includes('youtube.com') || domain.includes('youtu.be')) { badge.innerText = 'YouTube'; info.innerText = 'Plateforme détectée : YouTube'; }
+                else if (domain.includes('kick.com')) { badge.innerText = 'Kick'; info.innerText = 'Plateforme détectée : Kick'; }
+                else { badge.innerText = domain; info.innerText = `Cible : ${domain}`; }
+            } catch (e) {
+                badge.innerText = 'Inconnu';
+                info.innerText = 'Entrez une URL valide...';
+            }
+
+            if (modeSelect === 'chat_live') {
+                chatGroup.classList.add('active');
+            } else {
+                chatGroup.classList.remove('active');
+            }
         }
 
         async function sendCommand(action) {
@@ -199,7 +288,13 @@ async def index(request):
             const payload = {
                 target_url: document.getElementById('target_url').value,
                 users: parseInt(document.getElementById('users').value) || 1,
-                operation_mode: document.getElementById('operation_mode').value
+                operation_mode: document.getElementById('operation_mode').value,
+                chat_message: document.getElementById('chat_message').value,
+                chat_interval: parseInt(document.getElementById('chat_interval').value) || 10,
+                auto_waves: document.getElementById('auto_waves_toggle').checked,
+                auto_reconnect: document.getElementById('auto_reconnect_banned').checked,
+                auto_remove_banned: document.getElementById('auto_remove_banned').checked,
+                reconnect_attempts: document.getElementById('reconnect_attempts').value
             };
 
             try {
@@ -209,7 +304,7 @@ async def index(request):
                     body: JSON.stringify(payload)
                 });
                 const data = await res.json();
-                log(data.message || "Ordre transmis au cluster.");
+                log(data.message || "Ordre transmis.");
                 
                 if (action === 'start') {
                     if (pollInterval) clearInterval(pollInterval);
@@ -221,7 +316,7 @@ async def index(request):
                     resetStats();
                 }
             } catch(e) {
-                log("Erreur réseau avec le Master.");
+                log("Erreur réseau Master.");
             }
         }
 
@@ -235,7 +330,7 @@ async def index(request):
 
         function updateMonitorUI(bots) {
             const container = document.getElementById('bots-container');
-            if (bots.length === 0) return;
+            if (!bots || bots.length === 0) return;
 
             document.getElementById('empty-monitor')?.remove();
             
@@ -274,7 +369,7 @@ async def index(request):
             document.getElementById('stat-active').innerText = activeCount;
             document.getElementById('stat-launching').innerText = launchingCount;
             document.getElementById('stat-banned').innerText = bannedCount;
-            document.getElementById('stat-estimated-viewers').innerText = activeCount; // Estimation réelle basée sur les bots connectés
+            document.getElementById('stat-estimated-viewers').innerText = activeCount;
             document.getElementById('active-bots-count').innerText = bots.length + " Total";
         }
 
@@ -286,7 +381,7 @@ async def index(request):
             document.getElementById('active-bots-count').innerText = "0 Total";
         }
 
-        log("Tableau de bord synchronisé prêt.");
+        log("Tableau de bord prêt.");
     </script>
 </body>
 </html>
@@ -294,7 +389,6 @@ async def index(request):
     return web.Response(text=html_content, content_type='text/html')
 
 async def api_status(request):
-    # Renvoie l'état réel de tous les bots enregistrés
     all_bots = list(cluster_bot_states.values())
     return web.json_response({"bots": all_bots})
 
@@ -302,7 +396,11 @@ async def api_start(request):
     global cluster_bot_states
     cluster_bot_states.clear()
     
-    data = await request.json()
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"error": "Payload invalide"}, status=400)
+    
     target_url = data.get("target_url", "")
     total_users = max(1, int(data.get("users", 1)))
     num_workers = len(WORKER_URLS)
@@ -316,15 +414,12 @@ async def api_start(request):
         if users_for_this_worker <= 0:
             return
         
-        payload = {
-            "target_url": target_url,
-            "users": users_for_this_worker,
-            "worker_offset": index * base_users
-        }
+        payload = dict(data)
+        payload["users"] = users_for_this_worker
+        payload["worker_offset"] = index * base_users
 
         try:
             async with session.post(f"{worker_url.strip()}/start-bots", json=payload, timeout=ClientTimeout(total=5)) as resp:
-                body = await resp.json()
                 results.append({"worker": worker_url.strip(), "status": resp.status})
         except Exception as e:
             results.append({"worker": worker_url.strip(), "error": str(e)})
@@ -337,7 +432,6 @@ async def api_start(request):
     })
 
 async def api_report(request):
-    """Route par laquelle les workers envoient la télémétrie réelle des bots"""
     try:
         data = await request.json()
         bot_id = data.get("id")
