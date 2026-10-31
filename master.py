@@ -1,4 +1,4 @@
-"""Master Node - Dashboard Pro (Version 100% Réelle & Options Intégrales)."""
+"""Master Node - Dashboard Pro (Version 100% Réelle & Textes Personnalisés)."""
 import asyncio
 import os
 import uuid
@@ -44,7 +44,7 @@ async def index(request):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cluster Bot - Command Center Pro (Real-Time)</title>
+    <title>Cluster Bot - Command Center Pro</title>
     <style>
         :root { --bg: #090d16; --card: #1e293b; --card-alt: #0f172a; --accent: #38bdf8; --text: #f8fafc; --muted: #94a3b8; --success: #22c55e; --danger: #ef4444; --warning: #f59e0b; }
         body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
@@ -127,23 +127,24 @@ async def index(request):
             <h1>Cluster Controller <span class="badge" id="platform-badge">Auto-Detect</span></h1>
             
             <div class="form-group">
-                <label>URL Cible (Live, Vidéo ou Short)</label>
+                <label>URL Cible</label>
                 <input type="text" id="target_url" value="https://slider-crazed-latch.ngrok-free.dev" oninput="updateInterfaceLogic()">
                 <div class="detected-info" id="auto-detect-text">Plateforme détectée : Tunnel ngrok</div>
             </div>
 
             <div class="form-group">
-                <label>Mode de Fonctionnement Principal</label>
+                <label>Mode de Fonctionnement</label>
                 <select id="operation_mode" onchange="updateInterfaceLogic()">
-                    <option value="views_live" selected>👁️ Ajouter des vues (Live)</option>
-                    <option value="chat_live">⚡ Ajouter des vues + Messages (Live)</option>
-                    <option value="views_video">📈 Ajouter des vues (Vidéo / Short)</option>
+                    <option value="views_live" selected>👁️ Add Vues (Live)</option>
+                    <option value="chat_live">⚡ Add Vues + Messages (Live)</option>
+                    <option value="views_video">📈 Add Vues (Vidéo / Short)</option>
+                    <option value="chat_video">🔥 Add Vues + Messages (Vidéo / Short)</option>
                 </select>
             </div>
 
             <div class="conditional-group" id="chat-settings-group">
                 <div class="form-group">
-                    <label>Message Chat à envoyer</label>
+                    <label>Message à envoyer</label>
                     <input type="text" id="chat_message" value="Raid Bot by {Anonymous}">
                 </div>
                 <div class="form-group" style="margin-bottom:0;">
@@ -154,21 +155,21 @@ async def index(request):
 
             <div class="checkbox-group">
                 <input type="checkbox" id="auto_waves_toggle" checked>
-                <label for="auto_waves_toggle">🚀 Lancer automatiquement par vagues sécurisées</label>
+                <label for="auto_waves_toggle">🚀Lancer automatiquement par vagues sécurisées</label>
             </div>
 
             <div class="checkbox-group">
                 <input type="checkbox" id="auto_reconnect_banned" checked>
-                <label for="auto_reconnect_banned">🔄 Relancer automatiquement les bots bannis / filtrés</label>
+                <label for="auto_reconnect_banned">🔄Relancer automatiquement les bots bannis / filtrés</label>
             </div>
 
             <div class="checkbox-group" style="border-color: rgba(239, 68, 68, 0.3); background: rgba(239, 68, 68, 0.05);">
                 <input type="checkbox" id="auto_remove_banned">
-                <label for="auto_remove_banned">🗑️ Supprimer automatiquement les bots bannis / filtrés</label>
+                <label for="auto_remove_banned">🗑️Supprimer automatiquement les bots bannis / filtrés</label>
             </div>
 
             <div class="reconnect-options-container active" id="reconnect-options-box">
-                <label for="reconnect_attempts">Nombre d'essais :</label>
+                <label>Nombre d'essais :</label>
                 <select id="reconnect_attempts">
                     <option value="1">1 fois</option>
                     <option value="5">5 fois</option>
@@ -177,12 +178,12 @@ async def index(request):
             </div>
 
             <div class="form-group">
-                <label>Nombre de bots (Max : 10000)</label>
+                <label>Nombre de bots</label>
                 <input type="number" id="users" value="10" min="1" max="10000">
             </div>
 
             <div class="btn-group">
-                <button class="btn-start" onclick="sendCommand('start')">Lancer</button>
+                <button class="btn-start" onclick="sendCommand('start')">Commander</button>
                 <button class="btn-stop" onclick="sendCommand('stop')">Stopper Tout</button>
             </div>
 
@@ -191,7 +192,7 @@ async def index(request):
         </div>
 
         <div class="monitor-panel">
-            <h2>Monitoring Avancé <span class="badge" id="active-bots-count">0 Total</span></h2>
+            <h2>Stats Bots <span class="badge" id="active-bots-count">0 Total</span></h2>
             
             <div class="stats-dashboard">
                 <div class="stat-box">
@@ -208,13 +209,13 @@ async def index(request):
                 </div>
                 <div class="stat-box" style="border-color: var(--accent);">
                     <div class="stat-val" id="stat-estimated-viewers" style="color: var(--success);">0</div>
-                    <div class="stat-lbl">Est. Live</div>
+                    <div class="stat-lbl">Est. Bots</div>
                 </div>
             </div>
 
             <div id="bots-container">
                 <div style="text-align: center; color: var(--muted); padding: 40px; font-size: 13px;" id="empty-monitor">
-                    Aucune campagne active.
+                    Aucune Commande Bot(s)
                 </div>
             </div>
         </div>
@@ -270,13 +271,13 @@ async def index(request):
                 if (domain.includes('twitch.tv')) { badge.innerText = 'Twitch'; info.innerText = 'Plateforme détectée : Twitch'; }
                 else if (domain.includes('youtube.com') || domain.includes('youtu.be')) { badge.innerText = 'YouTube'; info.innerText = 'Plateforme détectée : YouTube'; }
                 else if (domain.includes('kick.com')) { badge.innerText = 'Kick'; info.innerText = 'Plateforme détectée : Kick'; }
-                else { badge.innerText = domain; info.innerText = `Cible : ${domain}`; }
+                else { badge.innerText = domain; info.innerText = `Plateforme détectée : Tunnel ngrok`; }
             } catch (e) {
-                badge.innerText = 'Inconnu';
-                info.innerText = 'Entrez une URL valide...';
+                badge.innerText = 'Auto-Detect';
+                info.innerText = 'Plateforme détectée : Tunnel ngrok';
             }
 
-            if (modeSelect === 'chat_live') {
+            if (modeSelect.includes('chat')) {
                 chatGroup.classList.add('active');
             } else {
                 chatGroup.classList.remove('active');
@@ -312,7 +313,7 @@ async def index(request):
                 } else {
                     if (pollInterval) clearInterval(pollInterval);
                     pollInterval = null;
-                    document.getElementById('bots-container').innerHTML = '<div style="text-align: center; color: var(--muted); padding: 40px;">Campagne arrêtée.</div>';
+                    document.getElementById('bots-container').innerHTML = '<div style="text-align: center; color: var(--muted); padding: 40px;">Aucune Commande Bot(s)</div>';
                     resetStats();
                 }
             } catch(e) {
