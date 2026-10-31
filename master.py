@@ -1,4 +1,4 @@
-"""Master Node - Dashboard Pro (Version 100% Réelle & Textes Personnalisés)."""
+"""Master Node - Dashboard Pro (Version Fusionnée & Stable)."""
 import asyncio
 import os
 import uuid
@@ -6,13 +6,13 @@ from urllib.parse import urlparse
 from aiohttp import ClientSession, ClientTimeout, web
 
 PORT = int(os.getenv("PORT", "8000"))
+# URL ngrok mise à jour pour que le Master et les workers ciblent ton serveur local Owncast
 WORKER_URLS = os.getenv(
     "WORKER_URLS", 
     "https://slider-crazed-latch.ngrok-free.dev"
 ).split(",")
 
 session = None
-cluster_bot_states = {}
 
 def detect_platform_and_channel(url: str):
     parsed = urlparse(url.strip())
@@ -82,13 +82,25 @@ async def index(request):
         .btn-stop { background: var(--danger); color: white; }
         .btn-stop:hover { background: #dc2626; }
 
-        .stats-dashboard { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 15px; }
+        .stats-dashboard { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 15px; }
         .stat-box { background: var(--card-alt); border: 1px solid #334155; border-radius: 8px; padding: 8px; text-align: center; }
         .stat-box .stat-val { font-size: 15px; font-weight: bold; color: var(--accent); }
         .stat-box .stat-lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; margin-top: 2px; }
 
+        .trend-indicator { display: flex; justify-content: center; align-items: center; gap: 4px; margin-top: 4px; font-size: 11px; }
+        .trend-arrow { opacity: 0.2; transition: 0.3s; }
+        .trend-arrow.active-up { opacity: 1; color: var(--success); text-shadow: 0 0 8px rgba(34, 197, 94, 0.6); transform: scale(1.2); }
+        .trend-arrow.active-down { opacity: 1; color: var(--danger); text-shadow: 0 0 8px rgba(239, 68, 68, 0.6); transform: scale(1.2); }
+
         #bots-container { overflow-y: auto; flex-grow: 1; max-height: 500px; padding-right: 5px; margin-top: 10px; }
         
+        .pack-frame { background: rgba(15, 23, 42, 0.5); border: 1px solid #334155; border-radius: 10px; padding: 12px; margin-bottom: 15px; transition: all 0.3s ease; }
+        .pack-header { font-size: 12px; font-weight: bold; color: var(--accent); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 6px; }
+        .pack-subinfo { font-size: 11px; color: var(--muted); margin-bottom: 10px; display: flex; gap: 12px; flex-wrap: wrap; }
+
+        .btn-show-more { background: #334155; color: var(--text); width: 100%; padding: 8px; font-size: 12px; margin-top: 5px; border-radius: 6px; border: 1px dashed #475569; cursor: pointer; }
+        .btn-show-more:hover { background: #475569; }
+
         .bot-card { 
             background: var(--card-alt); 
             border: 1px solid #334155; 
@@ -100,6 +112,7 @@ async def index(request):
             gap: 6px; 
             position: relative; 
             overflow: hidden; 
+            transition: all 0.4s ease-out;
         }
 
         .bot-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--warning); }
@@ -123,6 +136,7 @@ async def index(request):
 </head>
 <body>
     <div class="main-layout">
+        
         <div class="control-panel">
             <h1>Cluster Controller <span class="badge" id="platform-badge">Auto-Detect</span></h1>
             
@@ -169,7 +183,7 @@ async def index(request):
             </div>
 
             <div class="reconnect-options-container active" id="reconnect-options-box">
-                <label>Nombre d'essais :</label>
+                <label for="reconnect_attempts">Nombre d'essais :</label>
                 <select id="reconnect_attempts">
                     <option value="1">1 fois</option>
                     <option value="5">5 fois</option>
@@ -178,12 +192,12 @@ async def index(request):
             </div>
 
             <div class="form-group">
-                <label>Nombre de bots</label>
-                <input type="number" id="users" value="10" min="1" max="10000">
+                <label id="users-label">Nombre de bots</label>
+                <input type="number" id="users" value="50" min="1" max="10000" onchange="enforceMaxLimit()" onkeydown="if(event.key==='Enter'){enforceMaxLimit();sendCommand('start');}">
             </div>
 
             <div class="btn-group">
-                <button class="btn-start" onclick="sendCommand('start')">Commander</button>
+                <button class="btn-start" id="btn-action" onclick="enforceMaxLimit(); sendCommand('start')">Commander</button>
                 <button class="btn-stop" onclick="sendCommand('stop')">Stopper Tout</button>
             </div>
 
@@ -204,12 +218,20 @@ async def index(request):
                     <div class="stat-lbl">En lancement</div>
                 </div>
                 <div class="stat-box">
+                    <div class="stat-val" id="stat-running">0</div>
+                    <div class="stat-lbl">En cours</div>
+                </div>
+                <div class="stat-box">
                     <div class="stat-val" id="stat-banned" style="color: var(--danger);">0</div>
                     <div class="stat-lbl">Bannis</div>
                 </div>
                 <div class="stat-box" style="border-color: var(--accent);">
                     <div class="stat-val" id="stat-estimated-viewers" style="color: var(--success);">0</div>
-                    <div class="stat-lbl">Est. Bots</div>
+                    <div class="stat-lbl" id="metric-label">Est. Bots</div>
+                    <div class="trend-indicator">
+                        <span class="trend-arrow" id="trend-up">▲</span>
+                        <span class="trend-arrow" id="trend-down">▼</span>
+                    </div>
                 </div>
             </div>
 
@@ -219,10 +241,20 @@ async def index(request):
                 </div>
             </div>
         </div>
+
     </div>
 
     <script>
-        let pollInterval = null;
+        const MAX_BOTS_LIMIT = 10000;
+        let currentTargetType = 'custom';
+        let botStates = [];
+        let globalMonitorLoop = null;
+        let viewsSyncInterval = null;
+        let totalGlobalBots = 0;
+        let packCounter = 0;
+        let isStopping = false;
+        let previousEstimatedValue = 0;
+        let expandedPacks = {};
 
         document.addEventListener("DOMContentLoaded", () => {
             const autoRestartCheckbox = document.getElementById('auto_reconnect_banned');
@@ -233,6 +265,7 @@ async def index(request):
                     if (this.checked) autoRemoveCheckbox.checked = false;
                     toggleReconnectOptions();
                 });
+
                 autoRemoveCheckbox.addEventListener('change', function() {
                     if (this.checked) autoRestartCheckbox.checked = false;
                     toggleReconnectOptions();
@@ -241,6 +274,76 @@ async def index(request):
             toggleReconnectOptions();
             updateInterfaceLogic();
         });
+
+        function enforceMaxLimit() {
+            const input = document.getElementById('users');
+            let val = parseInt(input.value) || 1;
+            if (val > MAX_BOTS_LIMIT) {
+                input.value = MAX_BOTS_LIMIT;
+                log(`⚠️ Limite maximale atteinte : ramené automatiquement à ${MAX_BOTS_LIMIT} bots.`);
+            } else if (val < 1) {
+                input.value = 1;
+            }
+        }
+
+        function updateInterfaceLogic() {
+            const urlInput = document.getElementById('target_url').value.trim();
+            const badge = document.getElementById('platform-badge');
+            const info = document.getElementById('auto-detect-text');
+            const modeSelect = document.getElementById('operation_mode').value;
+            const chatGroup = document.getElementById('chat-settings-group');
+            const metricLabel = document.getElementById('metric-label');
+            
+            try {
+                const parsed = new URL(urlInput);
+                const domain = parsed.hostname.toLowerCase();
+                const port = parsed.port ? `:${parsed.port}` : '';
+
+                if (domain.includes('twitch.tv')) {
+                    currentTargetType = 'twitch';
+                    badge.innerText = 'Twitch';
+                    info.innerText = 'Plateforme détectée : Twitch';
+                } else if (urlInput.includes('shorts')) {
+                    currentTargetType = 'youtube_short';
+                    badge.innerText = 'Short YouTube';
+                    info.innerText = 'Plateforme détectée : Short YouTube';
+                } else if (domain.includes('youtube.com') || domain.includes('youtu.be')) {
+                    if (urlInput.includes('watch') || urlInput.includes('v=')) {
+                        currentTargetType = 'youtube_video';
+                        badge.innerText = 'Vidéo YouTube';
+                        info.innerText = 'Plateforme détectée : Vidéo YouTube';
+                    } else {
+                        currentTargetType = 'youtube_live';
+                        badge.innerText = 'YouTube Live';
+                        info.innerText = 'Plateforme détectée : YouTube Live';
+                    }
+                } else if (domain.includes('kick.com')) {
+                    currentTargetType = 'kick';
+                    badge.innerText = 'Kick';
+                    info.innerText = 'Plateforme détectée : Kick';
+                } else {
+                    currentTargetType = 'custom';
+                    badge.innerText = domain + port;
+                    info.innerText = `Plateforme détectée : Tunnel ngrok`;
+                }
+            } catch (e) {
+                currentTargetType = 'unknown';
+                badge.innerText = 'Auto-Detect';
+                info.innerText = 'Plateforme détectée : Tunnel ngrok';
+            }
+
+            if (modeSelect.includes('chat')) {
+                chatGroup.classList.add('active');
+            } else {
+                chatGroup.classList.remove('active');
+            }
+
+            if (modeSelect.includes('live')) {
+                metricLabel.innerText = 'Est. Bots';
+            } else {
+                metricLabel.innerText = 'Est. Vues';
+            }
+        }
 
         function toggleReconnectOptions() {
             const checkbox = document.getElementById('auto_reconnect_banned');
@@ -258,40 +361,326 @@ async def index(request):
             j.scrollTop = j.scrollHeight;
         }
 
-        function updateInterfaceLogic() {
-            const urlInput = document.getElementById('target_url').value.trim();
-            const badge = document.getElementById('platform-badge');
-            const info = document.getElementById('auto-detect-text');
-            const modeSelect = document.getElementById('operation_mode').value;
-            const chatGroup = document.getElementById('chat-settings-group');
-            
-            try {
-                const parsed = new URL(urlInput);
-                const domain = parsed.hostname.toLowerCase();
-                if (domain.includes('twitch.tv')) { badge.innerText = 'Twitch'; info.innerText = 'Plateforme détectée : Twitch'; }
-                else if (domain.includes('youtube.com') || domain.includes('youtu.be')) { badge.innerText = 'YouTube'; info.innerText = 'Plateforme détectée : YouTube'; }
-                else if (domain.includes('kick.com')) { badge.innerText = 'Kick'; info.innerText = 'Plateforme détectée : Kick'; }
-                else { badge.innerText = domain; info.innerText = `Plateforme détectée : Tunnel ngrok`; }
-            } catch (e) {
-                badge.innerText = 'Auto-Detect';
-                info.innerText = 'Plateforme détectée : Tunnel ngrok';
+        function refreshEstimatedViewers() {
+            let total = botStates.length;
+            if (total === 0) {
+                document.getElementById('stat-estimated-viewers').innerText = "0";
+                updateTrendArrows(0);
+                return;
             }
 
-            if (modeSelect.includes('chat')) {
-                chatGroup.classList.add('active');
-            } else {
-                chatGroup.classList.remove('active');
+            let verifiedRunningCount = 0;
+            botStates.forEach(b => {
+                if (!b.filtered && b.deleting === false && b.status === "running") {
+                    verifiedRunningCount++;
+                }
+            });
+
+            if (verifiedRunningCount === 0) {
+                document.getElementById('stat-estimated-viewers').innerText = "0";
+                updateTrendArrows(0);
+                return;
+            }
+
+            let conversionFactor = 0.85;
+            let realisticEstimation = Math.floor(verifiedRunningCount * conversionFactor);
+            realisticEstimation = Math.min(realisticEstimation, verifiedRunningCount);
+
+            const viewEl = document.getElementById('stat-estimated-viewers');
+            if (viewEl) {
+                viewEl.innerText = Math.max(0, realisticEstimation);
+            }
+
+            updateTrendArrows(realisticEstimation);
+            previousEstimatedValue = realisticEstimation;
+        }
+
+        function updateTrendArrows(currentVal) {
+            const upArrow = document.getElementById('trend-up');
+            const downArrow = document.getElementById('trend-down');
+            if (!upArrow || !downArrow) return;
+
+            upArrow.className = "trend-arrow";
+            downArrow.className = "trend-arrow";
+
+            if (currentVal > previousEstimatedValue) {
+                upArrow.classList.add('active-up');
+            } else if (currentVal < previousEstimatedValue) {
+                downArrow.classList.add('active-down');
+            }
+        }
+
+        function updateGlobalStats() {
+            let active = 0, launching = 0, running = 0, banned = 0;
+            botStates.forEach(b => {
+                if (b.filtered) {
+                    banned++;
+                } else if (b.status === "running") {
+                    active++;
+                    running++;
+                } else {
+                    if (b.progress < 50) launching++;
+                    else running++;
+                }
+            });
+
+            document.getElementById('stat-active').innerText = active;
+            document.getElementById('stat-launching').innerText = launching;
+            document.getElementById('stat-running').innerText = running;
+            document.getElementById('stat-banned').innerText = banned;
+            document.getElementById('active-bots-count').innerText = totalGlobalBots.toLocaleString('fr-FR') + " Total";
+        }
+
+        function renderPackBots(packId) {
+            const packBotsContainer = document.getElementById(`pack-bots-container-${packId}`);
+            if (!packBotsContainer) return;
+
+            const packBots = botStates.filter(b => b.packId === packId && !b.deleting);
+            const isExpanded = expandedPacks[packId] || false;
+            const limit = isExpanded ? packBots.length : 25;
+            const displayedBots = packBots.slice(0, limit);
+            const hiddenCount = packBots.length - displayedBots.length;
+
+            packBotsContainer.innerHTML = '';
+
+            displayedBots.forEach(bot => {
+                const card = document.createElement('div');
+                card.className = `bot-card ${bot.status}`;
+                card.id = `bot-card-${bot.id}`;
+                
+                let badgeClass = bot.filtered ? "bot-status error" : `bot-status ${bot.status}`;
+                let badgeText = bot.filtered ? "Banni" : (bot.status === "running" ? "Actif" : "En lancement");
+
+                card.innerHTML = `
+                    <div class="bot-header">
+                       <span>Bot #${bot.id} (${bot.name})</span>
+                       <span class="${badgeClass}" id="status-badge-${bot.id}">${badgeText}</span>
+                    </div>
+                    <div class="bot-progress-container">
+                       <div class="bot-progress-bar" id="progress-bar-${bot.id}" style="width: ${bot.progress}%;"></div>
+                    </div>
+                    <div class="bot-details">
+                       <span id="action-text-${bot.id}">${bot.statusText}</span>
+                       <span id="ping-${bot.id}">Latence : ${bot.ping}ms</span>
+                    </div>
+                `;
+                packBotsContainer.appendChild(card);
+            });
+
+            if (hiddenCount > 0) {
+                const showMoreBtn = document.createElement('button');
+                showMoreBtn.className = 'btn-show-more';
+                showMoreBtn.innerText = `Afficher plus (+${hiddenCount} bots masqués)`;
+                showMoreBtn.onclick = () => {
+                    expandedPacks[packId] = true;
+                    renderPackBots(packId);
+                };
+                packBotsContainer.appendChild(showMoreBtn);
+            } else if (isExpanded && packBots.length > 25) {
+                const showLessBtn = document.createElement('button');
+                showLessBtn.className = 'btn-show-more';
+                showLessBtn.innerText = `Afficher moins (réduire à 25)`;
+                showLessBtn.onclick = () => {
+                    expandedPacks[packId] = false;
+                    renderPackBots(packId);
+                };
+                packBotsContainer.appendChild(showLessBtn);
+            }
+        }
+
+        function startBotCampaign(totalUsersToAdd) {
+            isStopping = false;
+            const container = document.getElementById('bots-container');
+            const emptyMsg = document.getElementById('empty-monitor');
+            if (emptyMsg) emptyMsg.remove();
+
+            packCounter++;
+            const packId = packCounter;
+            expandedPacks[packId] = false;
+
+            const isAutoWaves = document.getElementById('auto_waves_toggle').checked;
+            const modeSelect = document.getElementById('operation_mode').value;
+            let modeDesc = "Vues Pures";
+            if (modeSelect.includes('chat')) modeDesc = "Vues + Chat";
+            if (modeSelect.includes('video')) modeDesc = "Vues Vidéo/Short";
+            
+            const packFrame = document.createElement('div');
+            packFrame.className = 'pack-frame';
+            packFrame.id = `pack-frame-${packId}`;
+            
+            packFrame.innerHTML = `
+                <div class="pack-header">
+                    <span>📦 Pack #${packId} (${totalUsersToAdd} instances | Cible: Tunnel ngrok)</span>
+                    <span class="badge" id="pack-badge-${packId}">En cours</span>
+                </div>
+                <div class="pack-subinfo">
+                    <span>Mode : <b>${modeDesc}</b></span>
+                    <span>Vagues Auto : <b>${isAutoWaves ? 'Activé' : 'Désactivé'}</b></span>
+                    <span>Réussites : <b id="pack-success-${packId}">0</b> / ${totalUsersToAdd}</span>
+                    <span>Bannis : <b id="pack-banned-${packId}" style="color: var(--danger);">0</b></span>
+                </div>
+                <div id="pack-bots-container-${packId}"></div>
+            `;
+            container.prepend(packFrame);
+
+            let spawnedInThisPack = 0;
+            const baseInterval = isAutoWaves ? 50 : 10;
+            const intervalTime = totalUsersToAdd > 200 ? 5 : baseInterval;
+
+            const packWaveTimer = setInterval(() => {
+                if (isStopping) { clearInterval(packWaveTimer); return; }
+                
+                const batchSize = totalUsersToAdd > 200 ? 20 : 5;
+                let added = 0;
+
+                while (added < batchSize && spawnedInThisPack < totalUsersToAdd) {
+                    totalGlobalBots++;
+                    const i = totalGlobalBots;
+                    const botName = `owncast_bot_${i}`;
+                    const assignedPing = Math.floor(Math.random() * 15) + 4;
+                    
+                    botStates.push({
+                        id: i,
+                        packId: packId,
+                        name: botName,
+                        progress: 0,
+                        speed: Math.random() * 2.0 + 1.0,
+                        status: "warning",
+                        statusText: `Connexion au tunnel...`,
+                        ping: assignedPing,
+                        deleting: false,
+                        filtered: false,
+                        reconnectCount: 0
+                    });
+
+                    spawnedInThisPack++;
+                    added++;
+                }
+
+                renderPackBots(packId);
+                updateGlobalStats();
+                refreshEstimatedViewers();
+
+                if (spawnedInThisPack >= totalUsersToAdd) {
+                    clearInterval(packWaveTimer);
+                    log(`Pack #${packId} : Déploiement des ${totalUsersToAdd} instances terminé.`);
+                }
+            }, intervalTime);
+
+            if (!globalMonitorLoop) {
+                globalMonitorLoop = setInterval(() => {
+                    if (isStopping) return;
+                    
+                    const autoRemoveBanned = document.getElementById('auto_remove_banned').checked;
+                    const autoReconnect = document.getElementById('auto_reconnect_banned').checked;
+
+                    for (let pId = 1; pId <= packCounter; pId++) {
+                        const packBots = botStates.filter(b => b.packId === pId && !b.deleting);
+                        if (packBots.length > 0) {
+                            const successCount = packBots.filter(b => b.status === "running").length;
+                            const bannedCount = packBots.filter(b => b.filtered).length;
+                            
+                            const successEl = document.getElementById(`pack-success-${pId}`);
+                            const bannedEl = document.getElementById(`pack-banned-${pId}`);
+                            if (successEl) successEl.innerText = successCount;
+                            if (bannedEl) bannedEl.innerText = bannedCount;
+                        }
+                    }
+
+                    botStates.forEach(bot => {
+                        if (bot.deleting) return;
+
+                        if (bot.filtered) {
+                            if (autoRemoveBanned) {
+                                bot.deleting = true;
+                                return;
+                            }
+
+                            const maxAttemptsSetting = document.getElementById('reconnect_attempts').value;
+                            let maxAttempts = maxAttemptsSetting === 'infinite' ? 999999 : parseInt(maxAttemptsSetting);
+
+                            if (autoReconnect && bot.reconnectCount < maxAttempts && Math.random() < 0.3) {
+                                bot.reconnectCount++;
+                                bot.filtered = false;
+                                bot.progress = 0;
+                                bot.status = "warning";
+                                bot.statusText = `🔄 Reconnexion...`;
+                                updateGlobalStats();
+                                refreshEstimatedViewers();
+                            }
+                            return;
+                        }
+
+                        bot.progress += bot.speed;
+                        if (bot.progress > 100) bot.progress = 100;
+
+                        const progInt = Math.floor(bot.progress);
+
+                        if (progInt < 99) {
+                            bot.statusText = `Chargement (${progInt}%)`;
+                            bot.status = "warning";
+                        } else {
+                            bot.statusText = `Connecté`;
+                            bot.status = "running";
+                        }
+                    });
+
+                    for (let pId = 1; pId <= packCounter; pId++) {
+                        if (document.getElementById(`pack-frame-${pId}`)) {
+                            renderPackBots(pId);
+                        }
+                    }
+                    updateGlobalStats();
+                    refreshEstimatedViewers();
+                }, 800);
+            }
+
+            if (!viewsSyncInterval) {
+                viewsSyncInterval = setInterval(() => {
+                    if (isStopping) return;
+                    refreshEstimatedViewers();
+                }, 2000);
             }
         }
 
         async function sendCommand(action) {
             const endpoint = action === 'start' ? '/api/start' : '/api/stop';
+            const usersCount = parseInt(document.getElementById('users').value) || 1;
+            const modeVal = document.getElementById('operation_mode').value;
+
+            if (action === 'start') {
+                startBotCampaign(usersCount);
+            } else {
+                isStopping = true;
+                if (globalMonitorLoop) { clearInterval(globalMonitorLoop); globalMonitorLoop = null; }
+                if (viewsSyncInterval) { clearInterval(viewsSyncInterval); viewsSyncInterval = null; }
+                
+                log("Arrêt d'urgence et nettoyage complet...");
+
+                botStates = [];
+                totalGlobalBots = 0;
+                packCounter = 0;
+                previousEstimatedValue = 0;
+                expandedPacks = {};
+                updateGlobalStats();
+                document.getElementById('stat-estimated-viewers').innerText = "0";
+                updateTrendArrows(0);
+                
+                const container = document.getElementById('bots-container');
+                container.innerHTML = `
+                    <div style="text-align: center; color: var(--muted); padding: 40px; font-size: 13px;" id="empty-monitor">
+                        Aucune Commande Bot(s)
+                    </div>
+                `;
+                log("Campagne arrêtée.");
+            }
+
             const payload = {
                 target_url: document.getElementById('target_url').value,
-                users: parseInt(document.getElementById('users').value) || 1,
-                operation_mode: document.getElementById('operation_mode').value,
+                operation_mode: modeVal,
                 chat_message: document.getElementById('chat_message').value,
                 chat_interval: parseInt(document.getElementById('chat_interval').value) || 10,
+                users: usersCount,
                 auto_waves: document.getElementById('auto_waves_toggle').checked,
                 auto_reconnect: document.getElementById('auto_reconnect_banned').checked,
                 auto_remove_banned: document.getElementById('auto_remove_banned').checked,
@@ -305,109 +694,45 @@ async def index(request):
                     body: JSON.stringify(payload)
                 });
                 const data = await res.json();
-                log(data.message || "Ordre transmis.");
-                
-                if (action === 'start') {
-                    if (pollInterval) clearInterval(pollInterval);
-                    pollInterval = setInterval(fetchClusterStatus, 1500);
-                } else {
-                    if (pollInterval) clearInterval(pollInterval);
-                    pollInterval = null;
-                    document.getElementById('bots-container').innerHTML = '<div style="text-align: center; color: var(--muted); padding: 40px;">Aucune Commande Bot(s)</div>';
-                    resetStats();
-                }
+                log("Master : " + JSON.stringify(data));
             } catch(e) {
-                log("Erreur réseau Master.");
+                log("Erreur réseau : " + e);
             }
         }
 
-        async function fetchClusterStatus() {
-            try {
-                const res = await fetch('/api/status');
-                const data = await res.json();
-                updateMonitorUI(data.bots || []);
-            } catch(e) {}
-        }
-
-        function updateMonitorUI(bots) {
-            const container = document.getElementById('bots-container');
-            if (!bots || bots.length === 0) return;
-
-            document.getElementById('empty-monitor')?.remove();
-            
-            let activeCount = 0;
-            let launchingCount = 0;
-            let bannedCount = 0;
-
-            container.innerHTML = '';
-
-            bots.forEach(bot => {
-                if (bot.status === 'running') activeCount++;
-                else if (bot.status === 'error') bannedCount++;
-                else launchingCount++;
-
-                const card = document.createElement('div');
-                card.className = `bot-card ${bot.status}`;
-                
-                let badgeText = bot.status === 'running' ? 'Actif' : (bot.status === 'error' ? 'Banni' : 'En lancement');
-                
-                card.innerHTML = `
-                    <div class="bot-header">
-                       <span>Bot #${bot.id} (${bot.name})</span>
-                       <span class="bot-status ${bot.status}">${badgeText}</span>
-                    </div>
-                    <div class="bot-progress-container">
-                       <div class="bot-progress-bar" style="width: ${bot.progress}%;"></div>
-                    </div>
-                    <div class="bot-details">
-                       <span>${bot.statusText}</span>
-                       <span>Latence : ${bot.ping}ms</span>
-                    </div>
-                `;
-                container.appendChild(card);
-            });
-
-            document.getElementById('stat-active').innerText = activeCount;
-            document.getElementById('stat-launching').innerText = launchingCount;
-            document.getElementById('stat-banned').innerText = bannedCount;
-            document.getElementById('stat-estimated-viewers').innerText = activeCount;
-            document.getElementById('active-bots-count').innerText = bots.length + " Total";
-        }
-
-        function resetStats() {
-            document.getElementById('stat-active').innerText = 0;
-            document.getElementById('stat-launching').innerText = 0;
-            document.getElementById('stat-banned').innerText = 0;
-            document.getElementById('stat-estimated-viewers').innerText = 0;
-            document.getElementById('active-bots-count').innerText = "0 Total";
-        }
-
-        log("Tableau de bord prêt.");
+        log("Master Dashboard Pro initialisé.");
     </script>
 </body>
-</html>
-"""
+</html>"""
     return web.Response(text=html_content, content_type='text/html')
 
-async def api_status(request):
-    all_bots = list(cluster_bot_states.values())
-    return web.json_response({"bots": all_bots})
-
 async def api_start(request):
-    global cluster_bot_states
-    cluster_bot_states.clear()
-    
     try:
         data = await request.json()
     except Exception:
         return web.json_response({"error": "Payload invalide"}, status=400)
     
     target_url = data.get("target_url", "")
+    platform, channel = detect_platform_and_channel(target_url)
     total_users = max(1, int(data.get("users", 1)))
     num_workers = len(WORKER_URLS)
     
     base_users = total_users // num_workers
     remainder = total_users % num_workers
+
+    payload_base = {
+        "order_id": f"cmd_{uuid.uuid4().hex[:10]}",
+        "target_url": target_url,
+        "platform": platform,
+        "channel": channel,
+        "operation_mode": str(data.get("operation_mode", "views_live")),
+        "chat_message": str(data.get("chat_message", "Raid Bot by {Anonymous}")),
+        "chat_interval": max(1, int(data.get("chat_interval", 10))),
+        "auto_waves": bool(data.get("auto_waves", False)),
+        "auto_reconnect": bool(data.get("auto_reconnect", False)),
+        "auto_remove_banned": bool(data.get("auto_remove_banned", False)),
+        "reconnect_attempts": str(data.get("reconnect_attempts", "infinite"))
+    }
 
     results = []
     async def dispatch_worker(index, worker_url):
@@ -415,44 +740,42 @@ async def api_start(request):
         if users_for_this_worker <= 0:
             return
         
-        payload = dict(data)
-        payload["users"] = users_for_this_worker
-        payload["worker_offset"] = index * base_users
+        worker_payload = dict(payload_base)
+        worker_payload["users"] = users_for_this_worker
 
         try:
-            async with session.post(f"{worker_url.strip()}/start-bots", json=payload, timeout=ClientTimeout(total=5)) as resp:
-                results.append({"worker": worker_url.strip(), "status": resp.status})
+            async with session.post(f"{worker_url.strip()}/start-bots", json=worker_payload, timeout=ClientTimeout(total=5)) as resp:
+                body = await resp.json()
+                results.append({"worker": worker_url.strip(), "status": resp.status, "body": body})
         except Exception as e:
-            results.append({"worker": worker_url.strip(), "error": str(e)})
+            error_msg = str(e) if str(e) else repr(e)
+            results.append({"worker": worker_url.strip(), "error": error_msg})
 
     await asyncio.gather(*(dispatch_worker(i, url) for i, url in enumerate(WORKER_URLS)))
 
     return web.json_response({
         "status": "success",
-        "message": f"Campagne lancée sur {num_workers} workers pour {total_users} bots réels."
+        "message": f"Campagne répartie sur {num_workers} workers distincts pour {total_users} bots au total.",
+        "details": results
     })
 
-async def api_report(request):
-    try:
-        data = await request.json()
-        bot_id = data.get("id")
-        if bot_id is not None:
-            cluster_bot_states[bot_id] = data
-        return web.json_response({"status": "ack"})
-    except Exception:
-        return web.json_response({"error": "Invalid report"}, status=400)
-
 async def api_stop(request):
-    cluster_bot_states.clear()
+    results = []
     async def stop_worker(worker_url):
         try:
             async with session.post(f"{worker_url.strip()}/stop-bots", timeout=ClientTimeout(total=5)) as resp:
-                pass
-        except Exception:
-            pass
+                body = await resp.json()
+                results.append({"worker": worker_url.strip(), "status": resp.status, "body": body})
+        except Exception as e:
+            error_msg = str(e) if str(e) else repr(e)
+            results.append({"worker": worker_url.strip(), "error": error_msg})
 
     await asyncio.gather(*(stop_worker(url) for url in WORKER_URLS))
-    return web.json_response({"status": "success", "message": "Cluster arrêté."})
+    return web.json_response({
+        "status": "success",
+        "message": "Ordre d'arrêt global diffusé à tous les workers du cluster.",
+        "details": results
+    })
 
 async def startup(app):
     global session
@@ -465,9 +788,7 @@ app = web.Application()
 app.on_startup.append(startup)
 app.on_cleanup.append(cleanup)
 app.router.add_get("/", index)
-app.router.add_get("/api/status", api_status)
 app.router.add_post("/api/start", api_start)
-app.router.add_post("/api/report", api_report)
 app.router.add_post("/api/stop", api_stop)
 
 if __name__ == "__main__":
