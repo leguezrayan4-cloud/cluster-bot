@@ -6,10 +6,10 @@ from urllib.parse import urlparse
 from aiohttp import ClientSession, ClientTimeout, web
 
 PORT = int(os.getenv("PORT", "8000"))
-# Intégration de tes 3 workers Render directement ici par défaut
+# URL ngrok mise à jour pour que le Master et les workers ciblent ton serveur local Owncast
 WORKER_URLS = os.getenv(
     "WORKER_URLS", 
-    "https://cluster-worker-1.onrender.com,https://cluster-worker-2.onrender.com,https://cluster-worker-3.onrender.com"
+    "https://slider-crazed-latch.ngrok-free.dev"
 ).split(",")
 
 session = None
@@ -142,16 +142,16 @@ async def index(request):
             
             <div class="form-group">
                 <label>URL Cible (Live, Vidéo YouTube ou Short)</label>
-                <input type="text" id="target_url" value="http://owncast:8080" oninput="updateInterfaceLogic()">
-                <div class="detected-info" id="auto-detect-text">Plateforme détectée : Localhost / Personnalisé</div>
+                <input type="text" id="target_url" value="https://slider-crazed-latch.ngrok-free.dev" oninput="updateInterfaceLogic()">
+                <div class="detected-info" id="auto-detect-text">Plateforme détectée : Tunnel ngrok</div>
             </div>
 
             <div class="form-group">
                 <label>Mode de Fonctionnement Principal</label>
                 <select id="operation_mode" onchange="updateInterfaceLogic()">
-                    <option value="views_live">👁️ Ajouter des vues (Live)</option>
+                    <option value="views_live" selected>👁️ Ajouter des vues (Live)</option>
                     <option value="chat_live">⚡ Ajouter des vues + Messages (Live)</option>
-                    <option value="views_video" selected>📈 Ajouter des vues (Vidéo / Short)</option>
+                    <option value="views_video">📈 Ajouter des vues (Vidéo / Short)</option>
                 </select>
             </div>
 
@@ -226,7 +226,7 @@ async def index(request):
                 </div>
                 <div class="stat-box" style="border-color: var(--accent);">
                     <div class="stat-val" id="stat-estimated-viewers" style="color: var(--success);">0</div>
-                    <div class="stat-lbl" id="metric-label">Est. Vues Vidéo</div>
+                    <div class="stat-lbl" id="metric-label">Est. Bots sur le Live</div>
                     <div class="trend-indicator">
                         <span class="trend-arrow" id="trend-up">▲</span>
                         <span class="trend-arrow" id="trend-down">▼</span>
@@ -245,7 +245,7 @@ async def index(request):
 
     <script>
         const MAX_BOTS_LIMIT = 10000;
-        let currentTargetType = 'youtube_video';
+        let currentTargetType = 'custom';
         let botStates = [];
         let globalMonitorLoop = null;
         let viewsSyncInterval = null;
@@ -323,7 +323,7 @@ async def index(request):
                 } else {
                     currentTargetType = 'custom';
                     badge.innerText = domain + port;
-                    info.innerText = `Cible personnalisée / Locale : ${domain + port}`;
+                    info.innerText = `Cible personnalisée / Tunnel : ${domain + port}`;
                 }
             } catch (e) {
                 currentTargetType = 'unknown';
@@ -381,7 +381,7 @@ async def index(request):
                 return;
             }
 
-            let conversionFactor = currentTargetType === 'twitch' ? 0.35 : 0.45;
+            let conversionFactor = 0.85;
             let realisticEstimation = Math.floor(verifiedRunningCount * conversionFactor);
             realisticEstimation = Math.min(realisticEstimation, verifiedRunningCount);
 
@@ -509,7 +509,7 @@ async def index(request):
             
             packFrame.innerHTML = `
                 <div class="pack-header">
-                    <span>📦 Pack #${packId} (${totalUsersToAdd} instances | Cible: ${currentTargetType.toUpperCase()})</span>
+                    <span>📦 Pack #${packId} (${totalUsersToAdd} instances | Cible: Tunnel ngrok)</span>
                     <span class="badge" id="pack-badge-${packId}">En cours</span>
                 </div>
                 <div class="pack-subinfo">
@@ -523,29 +523,29 @@ async def index(request):
             container.prepend(packFrame);
 
             let spawnedInThisPack = 0;
-            const baseInterval = isAutoWaves ? (currentTargetType === 'twitch' ? 150 : 80) : 15;
-            const intervalTime = totalUsersToAdd > 200 ? 10 : baseInterval;
+            const baseInterval = isAutoWaves ? 50 : 10;
+            const intervalTime = totalUsersToAdd > 200 ? 5 : baseInterval;
 
             const packWaveTimer = setInterval(() => {
                 if (isStopping) { clearInterval(packWaveTimer); return; }
                 
-                const batchSize = totalUsersToAdd > 200 ? 15 : 5;
+                const batchSize = totalUsersToAdd > 200 ? 20 : 5;
                 let added = 0;
 
                 while (added < batchSize && spawnedInThisPack < totalUsersToAdd) {
                     totalGlobalBots++;
                     const i = totalGlobalBots;
-                    const botName = `${currentTargetType}_node_${i}`;
-                    const assignedPing = Math.floor(Math.random() * 20) + 6;
+                    const botName = `owncast_bot_${i}`;
+                    const assignedPing = Math.floor(Math.random() * 15) + 4;
                     
                     botStates.push({
                         id: i,
                         packId: packId,
                         name: botName,
                         progress: 0,
-                        speed: Math.random() * 1.5 + 0.8,
+                        speed: Math.random() * 2.0 + 1.0,
                         status: "warning",
-                        statusText: `Établissement du tunnel...`,
+                        statusText: `Connexion au tunnel HLS...`,
                         ping: assignedPing,
                         deleting: false,
                         filtered: false,
@@ -562,7 +562,7 @@ async def index(request):
 
                 if (spawnedInThisPack >= totalUsersToAdd) {
                     clearInterval(packWaveTimer);
-                    log(`Pack #${packId} : Déploiement des ${totalUsersToAdd} instances cumulées terminé.`);
+                    log(`Pack #${packId} : Déploiement des ${totalUsersToAdd} instances vers ngrok terminé.`);
                 }
             }, intervalTime);
 
@@ -598,12 +598,12 @@ async def index(request):
                             const maxAttemptsSetting = document.getElementById('reconnect_attempts').value;
                             let maxAttempts = maxAttemptsSetting === 'infinite' ? 999999 : parseInt(maxAttemptsSetting);
 
-                            if (autoReconnect && bot.reconnectCount < maxAttempts && Math.random() < 0.2) {
+                            if (autoReconnect && bot.reconnectCount < maxAttempts && Math.random() < 0.3) {
                                 bot.reconnectCount++;
                                 bot.filtered = false;
                                 bot.progress = 0;
                                 bot.status = "warning";
-                                bot.statusText = `🔄 Relance auto...`;
+                                bot.statusText = `🔄 Reconnexion au flux...`;
                                 updateGlobalStats();
                                 refreshEstimatedViewers();
                             }
@@ -617,26 +617,10 @@ async def index(request):
                         const currentMode = document.getElementById('operation_mode').value;
 
                         if (progInt < 99) {
-                            bot.statusText = `Maintien de flux... (${progInt}%)`;
+                            bot.statusText = `Chargement HLS... (${progInt}%)`;
                             bot.status = "warning";
                         } else {
-                            const banThreshold = currentTargetType === 'twitch' ? 0.25 : 0.15;
-                            if (bot.id > 1 && Math.random() < banThreshold) { 
-                                bot.filtered = true;
-                                updateGlobalStats();
-                                bot.status = "error";
-                                bot.statusText = `❌ Rejeté par la sécurité`;
-                                refreshEstimatedViewers();
-                                return;
-                            }
-
-                            if (currentMode === 'chat_live') {
-                                bot.statusText = "Connecté et message validé !";
-                            } else if (currentMode === 'views_video') {
-                                bot.statusText = "Vue validée (Vidéo/Short)";
-                            } else {
-                                bot.statusText = `Actif sur le live`;
-                            }
+                            bot.statusText = `Flux actif / Vues comptabilisées`;
                             bot.status = "running";
                         }
                     });
@@ -716,7 +700,7 @@ async def index(request):
             }
         }
 
-        log("Master Dashboard Pro initialisé.");
+        log("Master Dashboard Pro initialisé avec le tunnel ngrok.");
     </script>
 </body>
 </html>"""
