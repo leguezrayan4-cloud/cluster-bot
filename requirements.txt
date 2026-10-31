@@ -1,3 +1,6 @@
+flask
+requests
+gunicorn
 aiohttp==3.9.1
 yarl==1.9.4
 python-dotenv==1.0.0
