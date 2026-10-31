@@ -41,7 +41,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Installation des binaires du navigateur Chromium (sans les scripts de dépendances obsolètes)
+# Installation des binaires du navigateur Chromium (sans les scripts obsolètes)
 RUN playwright install chromium
 
 # Copie du code source
